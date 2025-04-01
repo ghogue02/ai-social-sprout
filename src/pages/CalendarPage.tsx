@@ -4,7 +4,7 @@ import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
-import { ContentCalendar } from "@/components/calendar/ContentCalendar";
+import ContentCalendar from "@/components/calendar/ContentCalendar";
 
 const CalendarPage = () => {
   return (

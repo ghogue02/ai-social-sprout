@@ -2,36 +2,26 @@
 import { useState, useCallback } from "react";
 import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Upload, Loader2, Image as ImageIcon, X, FileSearch } from "lucide-react";
+import { ArrowLeft, Loader2, Image as ImageIcon, X, FileSearch } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 const ContentUploadPage = () => {
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [platform, setPlatform] = useState("instagram");
-  const [imageUrl, setImageUrl] = useState("");
-  const [postUrl, setPostUrl] = useState("");
-  const [likes, setLikes] = useState("0");
-  const [comments, setComments] = useState("0");
-  const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [username, setUsername] = useState("");
-  const [hashtags, setHashtags] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [parsedData, setParsedData] = useState<{
+    caption: string;
+    likes: number;
+    comments: number;
+    username: string;
+    postedDate?: string;
+    hashtags: string[];
+  } | null>(null);
   const { toast } = useToast();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -76,6 +66,9 @@ const ContentUploadPage = () => {
     setUploadedFile(file);
     // Create a temporary object URL for preview
     setUploadedImageUrl(URL.createObjectURL(file));
+    
+    // Automatically start analyzing
+    analyzeImage(file);
   };
 
   const handleRemoveUploadedImage = () => {
@@ -84,14 +77,77 @@ const ContentUploadPage = () => {
     }
     setUploadedFile(null);
     setUploadedImageUrl(null);
+    setParsedData(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsUploading(true);
+  const analyzeImage = async (file: File) => {
+    if (!file) {
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setParsedData(null);
     
     try {
-      let finalImageUrl = imageUrl;
+      // Convert the image to base64
+      const reader = new FileReader();
+      
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const base64 = reader.result?.toString().split(',')[1];
+          if (base64) resolve(base64);
+        };
+      });
+      
+      reader.readAsDataURL(file);
+      const imageBase64 = await base64Promise;
+      
+      // Call the analyze-instagram-image edge function
+      const { data, error } = await supabase.functions.invoke("analyze-instagram-image", {
+        body: { imageBase64 }
+      });
+      
+      if (error) {
+        throw error;
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to analyze image");
+      }
+      
+      const instagramData = data.instagramData;
+      setParsedData(instagramData);
+      
+      toast({
+        title: "Image analysis complete",
+        description: "Information has been extracted from your Instagram screenshot.",
+      });
+    } catch (error) {
+      console.error("Error analyzing image:", error);
+      toast({
+        title: "Analysis failed",
+        description: "Could not extract information from the image.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const saveContent = async () => {
+    if (!parsedData) {
+      toast({
+        title: "No data to save",
+        description: "Please upload and analyze an Instagram screenshot first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      let finalImageUrl = "";
       
       // Upload the image to Supabase Storage if there's an uploaded file
       if (uploadedFile) {
@@ -126,15 +182,16 @@ const ContentUploadPage = () => {
         .from('content_items')
         .insert([
           {
-            title,
-            content,
-            platform,
+            title: parsedData.caption?.substring(0, 50) + (parsedData.caption?.length > 50 ? '...' : '') || "Instagram Post",
+            content: parsedData.caption || "",
+            platform: "instagram",
             image_url: finalImageUrl,
-            original_post_url: postUrl,
-            published_at: new Date().toISOString(),
+            username: parsedData.username || "",
+            hashtags: Array.isArray(parsedData.hashtags) ? parsedData.hashtags : [],
+            published_at: parsedData.postedDate || new Date().toISOString(),
             engagement: {
-              likes: parseInt(likes),
-              comments: parseInt(comments)
+              likes: parsedData.likes || 0,
+              comments: parsedData.comments || 0
             }
           }
         ]);
@@ -144,98 +201,22 @@ const ContentUploadPage = () => {
       }
       
       toast({
-        title: "Content uploaded!",
-        description: "Your content has been added to the database.",
+        title: "Content saved!",
+        description: "Your Instagram content has been added to the database.",
       });
       
       // Reset form
-      setTitle("");
-      setContent("");
-      setPlatform("instagram");
-      setImageUrl("");
-      setPostUrl("");
-      setLikes("0");
-      setComments("0");
-      setUsername("");
-      setHashtags("");
       handleRemoveUploadedImage();
       
     } catch (error) {
-      console.error("Error uploading content:", error);
+      console.error("Error saving content:", error);
       toast({
-        title: "Upload failed",
-        description: "There was an error uploading your content.",
+        title: "Save failed",
+        description: "There was an error saving your content.",
         variant: "destructive",
       });
     } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const analyzeImage = async () => {
-    if (!uploadedFile) {
-      toast({
-        title: "No image to analyze",
-        description: "Please upload an Instagram screenshot first.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsAnalyzing(true);
-    
-    try {
-      // Convert the image to base64
-      const reader = new FileReader();
-      
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => {
-          const base64 = reader.result?.toString().split(',')[1];
-          if (base64) resolve(base64);
-        };
-      });
-      
-      reader.readAsDataURL(uploadedFile);
-      const imageBase64 = await base64Promise;
-      
-      // Call the analyze-instagram-image edge function
-      const { data, error } = await supabase.functions.invoke("analyze-instagram-image", {
-        body: { imageBase64 }
-      });
-      
-      if (error) {
-        throw error;
-      }
-
-      if (!data.success) {
-        throw new Error(data.error || "Failed to analyze image");
-      }
-      
-      const instagramData = data.instagramData;
-      
-      // Update form fields with extracted data
-      if (instagramData.caption) setTitle(instagramData.caption.substring(0, 50) + (instagramData.caption.length > 50 ? '...' : ''));
-      if (instagramData.caption) setContent(instagramData.caption);
-      if (instagramData.likes) setLikes(String(instagramData.likes));
-      if (instagramData.comments) setComments(String(instagramData.comments));
-      if (instagramData.username) setUsername(instagramData.username);
-      if (instagramData.hashtags && Array.isArray(instagramData.hashtags)) {
-        setHashtags(instagramData.hashtags.join(' '));
-      }
-      
-      toast({
-        title: "Image analysis complete",
-        description: "Information has been extracted from your Instagram screenshot.",
-      });
-    } catch (error) {
-      console.error("Error analyzing image:", error);
-      toast({
-        title: "Analysis failed",
-        description: "Could not extract information from the image.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsAnalyzing(false);
+      setIsSaving(false);
     }
   };
 
@@ -253,218 +234,149 @@ const ContentUploadPage = () => {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-serif gold-gradient">Upload Content</h1>
-          <p className="text-gray-400 mt-1">Manually add content from social media</p>
+          <h1 className="text-3xl font-serif gold-gradient">Instagram Content Capture</h1>
+          <p className="text-gray-400 mt-1">Drop an Instagram screenshot to automatically extract data</p>
         </div>
       </div>
 
-      <Card className="border-allendale-gold/20 bg-allendale-black/50">
+      <Card className="border-allendale-gold/20 bg-allendale-black/50 max-w-3xl mx-auto">
         <CardHeader>
-          <CardTitle className="text-lg text-allendale-gold font-serif">Content Information</CardTitle>
+          <CardTitle className="text-lg text-allendale-gold font-serif">Drop Instagram Screenshot</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-sm text-gray-200">Platform</label>
-              <Select
-                value={platform}
-                onValueChange={setPlatform}
-              >
-                <SelectTrigger className="bg-allendale-black border-allendale-gold/30">
-                  <SelectValue placeholder="Select platform" />
-                </SelectTrigger>
-                <SelectContent className="bg-allendale-black border-allendale-gold/30">
-                  <SelectItem value="instagram">Instagram</SelectItem>
-                  <SelectItem value="facebook">Facebook</SelectItem>
-                  <SelectItem value="website">Website</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-gray-200">Upload Instagram Screenshot</label>
-              <div
-                className={`border-2 border-dashed rounded-md p-6 transition-colors ${
-                  isDragging 
-                    ? "border-allendale-gold bg-allendale-gold/10" 
-                    : "border-allendale-gold/30 hover:border-allendale-gold/50"
-                } cursor-pointer`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => document.getElementById('fileInput')?.click()}
-              >
-                <input
-                  id="fileInput"
-                  type="file"
-                  className="hidden"
-                  accept="image/*"
-                  onChange={handleFileInput}
-                />
-                
-                {uploadedImageUrl ? (
-                  <div className="relative">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 z-10 h-8 w-8"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveUploadedImage();
-                      }}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+          <div
+            className={`border-2 border-dashed rounded-md p-8 transition-colors ${
+              isDragging 
+                ? "border-allendale-gold bg-allendale-gold/10" 
+                : "border-allendale-gold/30 hover:border-allendale-gold/50"
+            } cursor-pointer min-h-[300px] flex flex-col items-center justify-center`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => document.getElementById('fileInput')?.click()}
+          >
+            <input
+              id="fileInput"
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={handleFileInput}
+            />
+            
+            {uploadedImageUrl ? (
+              <div className="relative w-full">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 z-10 h-8 w-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveUploadedImage();
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
                     <img
                       src={uploadedImageUrl}
                       alt="Preview"
-                      className="max-h-64 mx-auto rounded"
+                      className="max-h-96 rounded"
                     />
                     
-                    <div className="mt-4 flex justify-center">
+                    {isAnalyzing && (
+                      <div className="mt-4 flex items-center justify-center space-x-2 bg-allendale-black/70 p-3 rounded">
+                        <Loader2 className="h-5 w-5 animate-spin text-allendale-gold" />
+                        <span className="text-allendale-gold">Analyzing screenshot...</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {parsedData && (
+                    <div className="space-y-4 bg-allendale-black/70 p-4 rounded">
+                      <h3 className="text-lg font-semibold text-allendale-gold">Extracted Data</h3>
+                      
+                      <div className="space-y-2">
+                        <div>
+                          <span className="text-gray-400">Username:</span>
+                          <p className="text-white font-medium">{parsedData.username || "Unknown"}</p>
+                        </div>
+                        
+                        <div>
+                          <span className="text-gray-400">Caption:</span>
+                          <p className="text-white">{parsedData.caption || "No caption"}</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="text-gray-400">Likes:</span>
+                            <p className="text-white font-medium">{parsedData.likes || 0}</p>
+                          </div>
+                          
+                          <div>
+                            <span className="text-gray-400">Comments:</span>
+                            <p className="text-white font-medium">{parsedData.comments || 0}</p>
+                          </div>
+                        </div>
+                        
+                        {parsedData.postedDate && (
+                          <div>
+                            <span className="text-gray-400">Posted Date:</span>
+                            <p className="text-white">{parsedData.postedDate}</p>
+                          </div>
+                        )}
+                        
+                        {parsedData.hashtags && parsedData.hashtags.length > 0 && (
+                          <div>
+                            <span className="text-gray-400">Hashtags:</span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {parsedData.hashtags.map((tag, index) => (
+                                <span 
+                                  key={index} 
+                                  className="bg-allendale-gold/20 text-allendale-gold px-2 py-1 rounded text-xs"
+                                >
+                                  {tag.startsWith('#') ? tag : `#${tag}`}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
                       <Button
-                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          analyzeImage();
+                          saveContent();
                         }}
-                        className="bg-allendale-gold text-black hover:bg-allendale-gold/80"
-                        disabled={isAnalyzing}
+                        className="w-full bg-allendale-gold text-black hover:bg-allendale-gold/80 mt-4"
+                        disabled={isSaving}
                       >
-                        {isAnalyzing ? (
+                        {isSaving ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Analyzing...
+                            Saving...
                           </>
                         ) : (
-                          <>
-                            <FileSearch className="mr-2 h-4 w-4" />
-                            Extract Info from Screenshot
-                          </>
+                          "Save Content"
                         )}
                       </Button>
                     </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center text-gray-400">
-                    <ImageIcon className="h-12 w-12 mb-2" />
-                    <p className="text-center">
-                      <span className="font-medium">Drop Instagram screenshot here</span> or click to upload
-                    </p>
-                    <p className="text-xs mt-1">AI will automatically extract post data</p>
-                  </div>
-                )}
-              </div>
-              
-              {!uploadedImageUrl && (
-                <div className="space-y-2 mt-4">
-                  <label className="text-sm text-gray-200">Or provide an image URL</label>
-                  <Input 
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    className="bg-allendale-black border-allendale-gold/30"
-                    placeholder="URL to the image"
-                  />
+                  )}
                 </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-gray-200">Title</label>
-              <Input 
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="bg-allendale-black border-allendale-gold/30"
-                placeholder="E.g. Weekend Special: Half-price cocktails"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-gray-200">Content</label>
-              <Textarea 
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="bg-allendale-black border-allendale-gold/30 min-h-[100px]"
-                placeholder="Post content or description"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm text-gray-200">Username</label>
-                <Input 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="bg-allendale-black border-allendale-gold/30"
-                  placeholder="Instagram username"
-                />
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm text-gray-200">Hashtags</label>
-                <Input 
-                  value={hashtags}
-                  onChange={(e) => setHashtags(e.target.value)}
-                  className="bg-allendale-black border-allendale-gold/30"
-                  placeholder="#food #restaurant"
-                />
+            ) : (
+              <div className="flex flex-col items-center text-gray-400">
+                <ImageIcon className="h-20 w-20 mb-4 text-allendale-gold/50" />
+                <p className="text-center text-lg">
+                  <span className="font-medium">Drop Instagram screenshot here</span> or click to upload
+                </p>
+                <p className="text-center text-sm mt-2 max-w-md">
+                  Simply drop a screenshot of an Instagram post and AI will automatically extract all the content, engagement data, and hashtags
+                </p>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-gray-200">Original Post URL</label>
-              <Input 
-                value={postUrl}
-                onChange={(e) => setPostUrl(e.target.value)}
-                className="bg-allendale-black border-allendale-gold/30"
-                placeholder="URL to the original post"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm text-gray-200">Likes</label>
-                <Input 
-                  type="number"
-                  min="0"
-                  value={likes}
-                  onChange={(e) => setLikes(e.target.value)}
-                  className="bg-allendale-black border-allendale-gold/30"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm text-gray-200">Comments</label>
-                <Input 
-                  type="number"
-                  min="0"
-                  value={comments}
-                  onChange={(e) => setComments(e.target.value)}
-                  className="bg-allendale-black border-allendale-gold/30"
-                />
-              </div>
-            </div>
-
-            <Button 
-              type="submit" 
-              className="bg-allendale-gold text-black hover:bg-allendale-gold/80"
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Uploading...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Content
-                </>
-              )}
-            </Button>
-          </form>
+            )}
+          </div>
         </CardContent>
       </Card>
     </MainLayout>
