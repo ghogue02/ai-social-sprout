@@ -39,7 +39,7 @@ serve(async (req) => {
       );
     }
 
-    // Call OpenAI API to analyze the image
+    // Call OpenAI API to analyze the image with improved prompt
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -51,14 +51,14 @@ serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: "You are an assistant that analyzes screenshots of Instagram posts. Extract the following information in JSON format: 1) caption/text content, 2) number of likes, 3) number of comments, 4) username of poster, 5) date posted (estimate if not exact), 6) hashtags used. Return ONLY valid JSON with these fields: caption, likes, comments, username, postedDate, hashtags (array)."
+            content: "You are an assistant that analyzes Instagram post screenshots. Extract the following information: caption/text content, number of likes, number of comments, username of poster, date posted, and hashtags used. Return ONLY valid JSON without code blocks, markdown, or any other text. The JSON must have these fields: caption (string), likes (number), comments (number), username (string), postedDate (string), hashtags (array of strings)."
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: "Analyze this Instagram post screenshot and extract the key information as JSON. Only return valid JSON, no other text."
+                text: "Analyze this Instagram post screenshot and extract the key information as clean JSON. Don't include any markdown formatting, code blocks, or explanations in your response. Return only the raw JSON object."
               },
               {
                 type: "image_url",
@@ -77,9 +77,34 @@ serve(async (req) => {
     // Extract the JSON response
     let parsedContent;
     try {
-      const aiResponse = data.choices[0].message.content;
-      // Attempt to parse the JSON from the AI response
-      parsedContent = JSON.parse(aiResponse);
+      const aiResponse = data.choices[0]?.message?.content;
+      
+      if (!aiResponse) {
+        throw new Error("No response from OpenAI");
+      }
+      
+      console.log("Raw AI response:", aiResponse);
+      
+      // Clean the response to ensure it's valid JSON
+      // Remove any potential markdown code block markers or other text
+      const jsonString = aiResponse
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+      
+      // Attempt to parse the JSON from the cleaned AI response
+      parsedContent = JSON.parse(jsonString);
+      
+      // Ensure all fields have appropriate default values
+      parsedContent = {
+        caption: parsedContent.caption || "",
+        likes: parseInt(parsedContent.likes) || 0,
+        comments: parseInt(parsedContent.comments) || 0,
+        username: parsedContent.username || "",
+        postedDate: parsedContent.postedDate || "",
+        hashtags: Array.isArray(parsedContent.hashtags) ? parsedContent.hashtags : []
+      };
+      
     } catch (e) {
       console.error("Error parsing AI response:", e);
       console.log("Raw AI response:", data.choices[0]?.message?.content);

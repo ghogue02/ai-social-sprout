@@ -3,5 +3,5 @@
 // The actual secrets are set through the Supabase dashboard
 
 // Required secrets for the analyze-instagram-image function:
-// OPENAI_API_KEY: The OpenAI API key for image analysis
+// OPENAI_API_KEY: The OpenAI API key for image analysis - Set to the value provided by the user
 
