@@ -1,8 +1,8 @@
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Upload, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, Image as ImageIcon, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,21 +26,107 @@ const ContentUploadPage = () => {
   const [likes, setLikes] = useState("0");
   const [comments, setComments] = useState("0");
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileUpload(files[0]);
+    }
+  }, []);
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFileUpload(e.target.files[0]);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!file.type.includes('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload an image file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadedFile(file);
+    // Create a temporary object URL for preview
+    setUploadedImageUrl(URL.createObjectURL(file));
+  };
+
+  const handleRemoveUploadedImage = () => {
+    if (uploadedImageUrl) {
+      URL.revokeObjectURL(uploadedImageUrl);
+    }
+    setUploadedFile(null);
+    setUploadedImageUrl(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUploading(true);
     
     try {
-      const { data, error } = await supabase
+      let finalImageUrl = imageUrl;
+      
+      // Upload the image to Supabase Storage if there's an uploaded file
+      if (uploadedFile) {
+        const filename = `${Date.now()}_${uploadedFile.name.replace(/\s+/g, '_')}`;
+        
+        // First check if the bucket exists, if not create it
+        const { data: buckets } = await supabase.storage.listBuckets();
+        const contentBucketExists = buckets?.find(bucket => bucket.name === 'content-images');
+        
+        if (!contentBucketExists) {
+          await supabase.storage.createBucket('content-images', {
+            public: true,
+            fileSizeLimit: 5242880 // 5MB
+          });
+        }
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('content-images')
+          .upload(filename, uploadedFile);
+          
+        if (uploadError) {
+          throw uploadError;
+        }
+        
+        if (uploadData) {
+          const { data } = supabase.storage.from('content-images').getPublicUrl(filename);
+          finalImageUrl = data.publicUrl;
+        }
+      }
+      
+      const { error } = await supabase
         .from('content_items')
         .insert([
           {
             title,
             content,
             platform,
-            image_url: imageUrl,
+            image_url: finalImageUrl,
             original_post_url: postUrl,
             published_at: new Date().toISOString(),
             engagement: {
@@ -48,8 +134,7 @@ const ContentUploadPage = () => {
               comments: parseInt(comments)
             }
           }
-        ])
-        .select();
+        ]);
       
       if (error) {
         throw error;
@@ -68,6 +153,7 @@ const ContentUploadPage = () => {
       setPostUrl("");
       setLikes("0");
       setComments("0");
+      handleRemoveUploadedImage();
       
     } catch (error) {
       console.error("Error uploading content:", error);
@@ -90,7 +176,7 @@ const ContentUploadPage = () => {
           asChild
           className="mr-4 text-gray-400 hover:text-white"
         >
-          <Link to="/">
+          <Link to="/content">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
@@ -145,14 +231,68 @@ const ContentUploadPage = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-gray-200">Image URL</label>
-              <Input 
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                className="bg-allendale-black border-allendale-gold/30"
-                placeholder="URL to the image"
-              />
-              <p className="text-xs text-gray-400">Leave blank if no image</p>
+              <label className="text-sm text-gray-200">Image Upload</label>
+              <div
+                className={`border-2 border-dashed rounded-md p-6 transition-colors ${
+                  isDragging 
+                    ? "border-allendale-gold bg-allendale-gold/10" 
+                    : "border-allendale-gold/30 hover:border-allendale-gold/50"
+                } cursor-pointer`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => document.getElementById('fileInput')?.click()}
+              >
+                <input
+                  id="fileInput"
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  onChange={handleFileInput}
+                />
+                
+                {uploadedImageUrl ? (
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 z-10 h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveUploadedImage();
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <img
+                      src={uploadedImageUrl}
+                      alt="Preview"
+                      className="max-h-64 mx-auto rounded"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center text-gray-400">
+                    <ImageIcon className="h-12 w-12 mb-2" />
+                    <p className="text-center">
+                      <span className="font-medium">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs mt-1">PNG, JPG, GIF up to 5MB</p>
+                  </div>
+                )}
+              </div>
+              
+              {!uploadedImageUrl && (
+                <div className="space-y-2 mt-4">
+                  <label className="text-sm text-gray-200">Or provide an image URL</label>
+                  <Input 
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    className="bg-allendale-black border-allendale-gold/30"
+                    placeholder="URL to the image"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

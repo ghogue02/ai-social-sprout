@@ -20,6 +20,7 @@ const RecentContent = () => {
   useEffect(() => {
     async function fetchRecentContent() {
       try {
+        // Use the correct types for the Supabase query
         const { data, error } = await supabase
           .from('content_items')
           .select('*')
