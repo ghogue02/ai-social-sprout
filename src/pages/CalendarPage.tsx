@@ -1,9 +1,10 @@
 
+import { useState } from "react";
 import MainLayout from "@/components/layout/MainLayout";
-import ContentCalendar from "@/components/calendar/ContentCalendar";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
+import { ContentCalendar } from "@/components/calendar/ContentCalendar";
 
 const CalendarPage = () => {
   return (
@@ -21,11 +22,13 @@ const CalendarPage = () => {
         </Button>
         <div>
           <h1 className="text-3xl font-serif gold-gradient">Content Calendar</h1>
-          <p className="text-gray-400 mt-1">Schedule and manage your marketing content</p>
+          <p className="text-gray-400 mt-1">Schedule and plan your content</p>
         </div>
       </div>
 
-      <ContentCalendar />
+      <div className="mt-6">
+        <ContentCalendar />
+      </div>
     </MainLayout>
   );
 };

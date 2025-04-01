@@ -4,3 +4,4 @@
 
 // Required secrets for the analyze-instagram-image function:
 // OPENAI_API_KEY: The OpenAI API key for image analysis
+
