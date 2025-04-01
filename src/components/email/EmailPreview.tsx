@@ -1,47 +1,23 @@
-
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, Share2, Send } from "lucide-react";
+import { Download, Share2, Check, Image as ImageIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-interface EmailPreviewProps {
-  email: {
-    subject: string;
-    body: string;
-  } | null;
+interface ImagePreviewProps {
+  imageUrl: string | null;
 }
 
-const EmailPreview = ({ email }: EmailPreviewProps) => {
-  const [copied, setCopied] = useState(false);
+const ImagePreview = ({ imageUrl }: ImagePreviewProps) => {
   const [saved, setSaved] = useState(false);
   const { toast } = useToast();
 
-  const handleCopyContent = () => {
-    if (email) {
-      const fullContent = `Subject: ${email.subject}\n\n${email.body}`;
-      navigator.clipboard.writeText(fullContent);
-      setCopied(true);
-      
-      toast({
-        title: "Copied to clipboard!",
-        description: "Email content has been copied to your clipboard.",
-      });
-      
-      setTimeout(() => {
-        setCopied(false);
-      }, 2000);
-    }
-  };
-
-  const handleSaveEmail = () => {
+  const handleSaveImage = () => {
     setSaved(true);
     
     toast({
-      title: "Email saved!",
-      description: "Your email has been saved to your library.",
+      title: "Image saved!",
+      description: "Your image has been saved to your library.",
     });
     
     setTimeout(() => {
@@ -49,63 +25,52 @@ const EmailPreview = ({ email }: EmailPreviewProps) => {
     }, 2000);
   };
 
-  const handleSendTest = () => {
-    toast({
-      title: "Test email sent!",
-      description: "A test email has been sent to your account.",
-    });
+  const handleDownloadImage = () => {
+    if (imageUrl) {
+      // Create a temporary link element
+      const link = document.createElement('a');
+      link.href = imageUrl;
+      link.download = 'allendale-social-image.png';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({
+        title: "Download started!",
+        description: "Your image is being downloaded.",
+      });
+    }
   };
 
   return (
     <Card className="border-allendale-gold/20 bg-allendale-black/50 h-full">
       <CardHeader>
-        <CardTitle className="text-lg text-allendale-gold font-serif">Email Preview</CardTitle>
+        <CardTitle className="text-lg text-allendale-gold font-serif">Image Preview</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {email ? (
+          {imageUrl ? (
             <>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-sm text-gray-200">Subject</label>
-                  <Input 
-                    value={email.subject} 
-                    readOnly
-                    className="bg-allendale-black border-allendale-gold/30 text-gray-200"
-                  />
-                </div>
-                
-                <div className="space-y-1">
-                  <label className="text-sm text-gray-200">Body</label>
-                  <Textarea 
-                    value={email.body} 
-                    readOnly
-                    className="min-h-[250px] bg-allendale-black border-allendale-gold/30 text-gray-200"
-                  />
-                </div>
+              <div className="border border-allendale-gold/30 rounded-md overflow-hidden">
+                <img 
+                  src={imageUrl} 
+                  alt="Generated content" 
+                  className="w-full h-auto object-cover"
+                />
               </div>
               
-              <div className="flex flex-wrap gap-2">
+              <div className="flex gap-2">
                 <Button
-                  onClick={handleCopyContent}
+                  onClick={handleDownloadImage}
                   variant="outline"
                   className="border-allendale-gold/30 text-allendale-gold hover:bg-allendale-gold/10"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="mr-2 h-4 w-4" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="mr-2 h-4 w-4" />
-                      Copy
-                    </>
-                  )}
+                  <Download className="mr-2 h-4 w-4" />
+                  Download
                 </Button>
                 
                 <Button
-                  onClick={handleSaveEmail}
+                  onClick={handleSaveImage}
                   variant="outline"
                   className="border-allendale-gold/30 text-allendale-gold hover:bg-allendale-gold/10"
                 >
@@ -117,25 +82,17 @@ const EmailPreview = ({ email }: EmailPreviewProps) => {
                   ) : (
                     <>
                       <Share2 className="mr-2 h-4 w-4" />
-                      Save
+                      Save to Library
                     </>
                   )}
-                </Button>
-                
-                <Button
-                  onClick={handleSendTest}
-                  className="bg-allendale-gold text-black hover:bg-allendale-gold/80"
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  Send Test
                 </Button>
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center h-[300px] text-center text-gray-400">
-              <Mail className="h-16 w-16 text-gray-500 mb-4" />
-              <p>Generated email will appear here</p>
-              <p className="text-sm mt-2">Use the form to create email content for your campaigns</p>
+            <div className="flex flex-col items-center justify-center h-[300px] border border-dashed border-allendale-gold/30 rounded-md text-center text-gray-400 p-4">
+              <ImageIcon className="h-16 w-16 text-gray-500 mb-4" />
+              <p>Generated image will appear here</p>
+              <p className="text-sm mt-2">Use the form to create images for your marketing needs</p>
             </div>
           )}
         </div>
@@ -144,4 +101,4 @@ const EmailPreview = ({ email }: EmailPreviewProps) => {
   );
 };
 
-export default EmailPreview;
+export default ImagePreview;
